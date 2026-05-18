@@ -1,6 +1,6 @@
 FROM cloudsuite/base-os:ubuntu
 
-# This is based on the official memcached Dockerfile
+# This is based on the official memcached Dockerfile with added timing instrumentation for assoc_find()
 
 # add our user and group first to make sure their IDs get assigned consistently, regardless of whatever dependencies get added
 RUN groupadd -r memcache && useradd -r -g memcache memcache
@@ -25,9 +25,8 @@ RUN buildDeps='curl gcc libc6-dev libevent-dev make perl' \
 	&& mkdir -p /usr/src/memcached \
 	&& tar -xzf memcached.tar.gz -C /usr/src/memcached --strip-components=1 \
 	&& rm memcached.tar.gz \
-	&& cp /tmp/assoc_find_timing.patch /usr/src/memcached/assoc_find_timing.patch \
 	&& cd /usr/src/memcached \
-	&& patch -p1 < assoc_find_timing.patch \
+	&& patch -p1 < /tmp/assoc_find_timing.patch \
 	&& ./configure \
 	&& make -j $(nproc) \
 	&& make install \

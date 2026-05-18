@@ -1,0 +1,46 @@
+--- a/assoc.c
++++ b/assoc.c
+@@ -14,6 +14,7 @@
+ #include "memcached.h"
+ #include <sys/stat.h>
+ #include <sys/socket.h>
++#include <time.h>
+ #include <sys/resource.h>
+ #include <signal.h>
+ #include <fcntl.h>
+@@ -70,6 +71,16 @@
+ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
++    struct timespec assoc_find_start, assoc_find_end;
+     item *it;
+     uint64_t oldbucket;
++
++    clock_gettime(CLOCK_MONOTONIC, &assoc_find_start);
+ 
+     if (expanding &&
+         (oldbucket = (hv & hashmask(hashpower - 1))) >= expand_bucket)
+     {
+         it = old_hashtable[oldbucket];
+     } else {
+         it = primary_hashtable[hv & hashmask(hashpower)];
+     }
+ 
+     item *ret = NULL;
+     int depth = 0;
+@@ -89,6 +100,11 @@
+         if ((nkey == it->nkey) && (memcmp(key, ITEM_key(it), nkey) == 0)) {
+             ret = it;
+             break;
+         }
+         it = it->h_next;
+         ++depth;
+     }
++    clock_gettime(CLOCK_MONOTONIC, &assoc_find_end);
+     MEMCACHED_ASSOC_FIND(key, nkey, depth);
++    if (settings.verbose > 1) {
++        uint64_t assoc_find_ns = (uint64_t)(assoc_find_end.tv_sec - assoc_find_start.tv_sec) * 1000000000ULL
++            + (uint64_t)(assoc_find_end.tv_nsec - assoc_find_start.tv_nsec);
++        fprintf(stderr, "assoc_find latency: depth=%d time_ns=%llu\n", depth, (unsigned long long)assoc_find_ns);
++    }
+     return ret;
+ }
+ 

@@ -22,19 +22,32 @@ def timeout_handler(signum, frame):
 def analyze_container_logs(container_name):
     """Get and parse logs from Docker container with timeout"""
     try:
-        # Set a 4-minute timeout for docker logs call
+        # Use --tail to get only recent logs (much faster than reading all logs)
         result = subprocess.run(
-            ['docker', 'logs', container_name],
+            ['docker', 'logs', '--tail', '1000000', container_name],
             capture_output=True,
             text=True,
-            timeout=240
+            timeout=60  # 1 minute timeout for log retrieval
         )
         logs = result.stdout
         if result.stderr:
             logs += result.stderr
     except subprocess.TimeoutExpired:
-        print("Docker logs collection timeout, using partial data...")
-        return None
+        print("Docker logs collection timeout, retrying with fewer logs...")
+        try:
+            # Try with even fewer logs
+            result = subprocess.run(
+                ['docker', 'logs', '--tail', '100000', container_name],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            logs = result.stdout
+            if result.stderr:
+                logs += result.stderr
+        except subprocess.TimeoutExpired:
+            print("Still timing out. Using available data...")
+            return None
     except Exception as e:
         print(f"Error getting logs: {e}")
         return None

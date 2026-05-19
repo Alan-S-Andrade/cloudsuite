@@ -15,10 +15,11 @@ def analyze_container_logs(container_name):
         result = subprocess.run(
             ['docker', 'logs', container_name],
             capture_output=True,
-            text=True,
-            stderr=subprocess.STDOUT
+            text=True
         )
-        logs = result.stdout + result.stderr
+        logs = result.stdout
+        if result.stderr:
+            logs += result.stderr
     except Exception as e:
         print(f"Error getting logs: {e}")
         return None

@@ -7,21 +7,34 @@ Usage: python3 analyze_assoc_find.py <container_name> [output_file]
 import subprocess
 import re
 import sys
+import signal
 import numpy as np
 import matplotlib.pyplot as plt
 from statistics import mean, median, stdev
 
+# 5 minute timeout
+TIMEOUT = 300
+
+def timeout_handler(signum, frame):
+    print("\nTimeout reached. Processing collected data...")
+    raise TimeoutError("Script execution timeout")
+
 def analyze_container_logs(container_name):
-    """Get and parse logs from Docker container"""
+    """Get and parse logs from Docker container with timeout"""
     try:
+        # Set a 4-minute timeout for docker logs call
         result = subprocess.run(
             ['docker', 'logs', container_name],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=240
         )
         logs = result.stdout
         if result.stderr:
             logs += result.stderr
+    except subprocess.TimeoutExpired:
+        print("Docker logs collection timeout, using partial data...")
+        return None
     except Exception as e:
         print(f"Error getting logs: {e}")
         return None
@@ -133,27 +146,50 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python3 analyze_assoc_find.py <container_name> [output_file.png]")
         print("Example: python3 analyze_assoc_find.py dc-server assoc_find_cdf.png")
+        print("Note: Script has a 5-minute timeout")
         sys.exit(1)
     
-    container_name = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "assoc_find_cdf.png"
+    # Set up timeout handler
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(TIMEOUT)
     
-    print(f"Analyzing assoc_find() latency from container: {container_name}")
-    print("Collecting logs...")
-    
-    result = analyze_container_logs(container_name)
-    if result is None:
+    try:
+        container_name = sys.argv[1]
+        output_file = sys.argv[2] if len(sys.argv) > 2 else "assoc_find_cdf.png"
+        
+        print(f"Analyzing assoc_find() latency from container: {container_name}")
+        print(f"Timeout: {TIMEOUT} seconds")
+        print("Collecting logs (max 4 minutes)...")
+        
+        result = analyze_container_logs(container_name)
+        if result is None:
+            print("No data collected")
+            signal.alarm(0)
+            sys.exit(1)
+        
+        hits, misses = result
+        
+        if not hits or not misses:
+            print("Error: No hit or miss data found in logs")
+            print("Make sure the container is running with verbose mode (-vv)")
+            signal.alarm(0)
+            sys.exit(1)
+        
+        print(f"Collected {len(hits)} hits and {len(misses)} misses")
+        print("Generating plot...")
+        
+        print_statistics(hits, misses)
+        generate_cdf_plot(hits, misses, output_file)
+        
+        signal.alarm(0)  # Cancel alarm
+        print("\nDone!")
+        
+    except TimeoutError:
+        print("Overall execution timeout reached")
         sys.exit(1)
-    
-    hits, misses = result
-    
-    if not hits or not misses:
-        print("Error: No hit or miss data found in logs")
-        print("Make sure the container is running with verbose mode (-vv)")
-        sys.exit(1)
-    
-    print_statistics(hits, misses)
-    generate_cdf_plot(hits, misses, output_file)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+        sys.exit(0)
 
 if __name__ == '__main__':
     main()

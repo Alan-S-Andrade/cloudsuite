@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Analyze assoc_find() latency logs from memcached
+Analyze assoc_find() latency logs from memcached and generate CDF plot
 Usage: python3 analyze_assoc_find.py <container_name> [output_file]
 """
 
 import subprocess
 import re
 import sys
+import numpy as np
+import matplotlib.pyplot as plt
 from statistics import mean, median, stdev
 
 def analyze_container_logs(container_name):
@@ -42,39 +44,99 @@ def analyze_container_logs(container_name):
     
     return hits, misses
 
-def calculate_stats(data, name):
-    """Calculate statistics for a dataset"""
-    if not data:
-        print(f"\n{name}:")
-        print("  No data collected")
-        return
+def calculate_cdf(times):
+    """Calculate CDF for a list of times"""
+    sorted_times = np.sort(times)
+    cdf = np.arange(1, len(sorted_times) + 1) / len(sorted_times)
+    return sorted_times, cdf
+
+def generate_cdf_plot(hits, misses, output_file):
+    """Generate CDF plot for hits and misses"""
+    if not hits or not misses:
+        print("Error: Need both hits and misses data for CDF plot")
+        return False
     
-    times = [t for _, t in data]
-    depths = [d for d, _ in data]
+    hit_times = np.array([t for _, t in hits])
+    miss_times = np.array([t for _, t in misses])
     
-    print(f"\n{name}:")
-    print(f"  Count:              {len(times)}")
-    print(f"  Total time:         {sum(times):,} ns")
-    print(f"  Average time:       {mean(times):.2f} ns ({mean(times)/1000:.4f} µs)")
-    print(f"  Median time:        {median(times):.2f} ns ({median(times)/1000:.4f} µs)")
+    hit_sorted, hit_cdf = calculate_cdf(hit_times)
+    miss_sorted, miss_cdf = calculate_cdf(miss_times)
     
-    if len(times) > 1:
-        print(f"  Std Dev:            {stdev(times):.2f} ns")
+    # Create figure
+    plt.figure(figsize=(12, 7))
     
-    print(f"  Min time:           {min(times)} ns")
-    print(f"  Max time:           {max(times)} ns")
-    print(f"  Avg depth:          {mean(depths):.2f}")
-    print(f"  Min depth:          {min(depths)}")
-    print(f"  Max depth:          {max(depths)}")
+    # Convert to microseconds for readability
+    plt.plot(hit_sorted / 1000, hit_cdf * 100, linewidth=2, label='Cache Hit', color='green')
+    plt.plot(miss_sorted / 1000, miss_cdf * 100, linewidth=2, label='Cache Miss', color='red')
+    
+    plt.xlabel('Latency (µs)', fontsize=12)
+    plt.ylabel('Cumulative Probability (%)', fontsize=12)
+    plt.title('assoc_find() Latency CDF - Hits vs Misses', fontsize=14, fontweight='bold')
+    plt.legend(fontsize=11, loc='lower right')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    # Save figure
+    plt.savefig(output_file, dpi=150)
+    print(f"CDF plot saved to: {output_file}")
+    
+    # Also save as PDF
+    pdf_file = output_file.replace('.png', '.pdf')
+    plt.savefig(pdf_file, dpi=150)
+    print(f"CDF plot also saved to: {pdf_file}")
+    
+    plt.show()
+    return True
+
+def print_statistics(hits, misses):
+    """Print summary statistics"""
+    hit_times = [t for _, t in hits]
+    miss_times = [t for _, t in misses]
+    
+    print("\n" + "=" * 70)
+    print("assoc_find() Latency Analysis - CDF")
+    print("=" * 70)
+    
+    print(f"\nCACHE HITS:")
+    print(f"  Count:                {len(hit_times):,}")
+    print(f"  Mean latency:         {mean(hit_times):.2f} ns ({mean(hit_times)/1000:.4f} µs)")
+    print(f"  Median latency:       {median(hit_times):.2f} ns ({median(hit_times)/1000:.4f} µs)")
+    print(f"  Std Dev:              {stdev(hit_times):.2f} ns")
+    print(f"  Min latency:          {min(hit_times)} ns")
+    print(f"  Max latency:          {max(hit_times)} ns")
+    print(f"  99th percentile:      {np.percentile(hit_times, 99):.2f} ns ({np.percentile(hit_times, 99)/1000:.4f} µs)")
+    print(f"  95th percentile:      {np.percentile(hit_times, 95):.2f} ns ({np.percentile(hit_times, 95)/1000:.4f} µs)")
+    print(f"  50th percentile:      {np.percentile(hit_times, 50):.2f} ns ({np.percentile(hit_times, 50)/1000:.4f} µs)")
+    
+    print(f"\nCACHE MISSES:")
+    print(f"  Count:                {len(miss_times):,}")
+    print(f"  Mean latency:         {mean(miss_times):.2f} ns ({mean(miss_times)/1000:.4f} µs)")
+    print(f"  Median latency:       {median(miss_times):.2f} ns ({median(miss_times)/1000:.4f} µs)")
+    print(f"  Std Dev:              {stdev(miss_times):.2f} ns")
+    print(f"  Min latency:          {min(miss_times)} ns")
+    print(f"  Max latency:          {max(miss_times)} ns")
+    print(f"  99th percentile:      {np.percentile(miss_times, 99):.2f} ns ({np.percentile(miss_times, 99)/1000:.4f} µs)")
+    print(f"  95th percentile:      {np.percentile(miss_times, 95):.2f} ns ({np.percentile(miss_times, 95)/1000:.4f} µs)")
+    print(f"  50th percentile:      {np.percentile(miss_times, 50):.2f} ns ({np.percentile(miss_times, 50)/1000:.4f} µs)")
+    
+    total = len(hit_times) + len(miss_times)
+    print(f"\nOVERALL SUMMARY:")
+    print(f"  Total operations:     {total:,}")
+    print(f"  Hit rate:             {len(hit_times) * 100.0 / total:.2f}%")
+    print(f"  Miss rate:            {len(miss_times) * 100.0 / total:.2f}%")
+    hit_avg = mean(hit_times)
+    miss_avg = mean(miss_times)
+    print(f"  Mean latency ratio:   {miss_avg / hit_avg:.2f}x (miss slower)")
+    print("=" * 70)
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 analyze_assoc_find.py <container_name> [output_file]")
-        print("Example: python3 analyze_assoc_find.py dc-server timing_analysis.txt")
+        print("Usage: python3 analyze_assoc_find.py <container_name> [output_file.png]")
+        print("Example: python3 analyze_assoc_find.py dc-server assoc_find_cdf.png")
         sys.exit(1)
     
     container_name = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "assoc_find_analysis.txt"
+    output_file = sys.argv[2] if len(sys.argv) > 2 else "assoc_find_cdf.png"
     
     print(f"Analyzing assoc_find() latency from container: {container_name}")
     print("Collecting logs...")
@@ -85,28 +147,13 @@ def main():
     
     hits, misses = result
     
-    print("\n" + "=" * 60)
-    print("assoc_find() Latency Analysis")
-    print("=" * 60)
+    if not hits or not misses:
+        print("Error: No hit or miss data found in logs")
+        print("Make sure the container is running with verbose mode (-vv)")
+        sys.exit(1)
     
-    calculate_stats(hits, "HITS")
-    calculate_stats(misses, "MISSES")
-    
-    # Summary
-    total = len(hits) + len(misses)
-    if total > 0:
-        print(f"\nSUMMARY:")
-        print(f"  Total operations:   {total}")
-        print(f"  Hit rate:           {len(hits) * 100.0 / total:.2f}%")
-        print(f"  Miss rate:          {len(misses) * 100.0 / total:.2f}%")
-        if len(hits) > 0 and len(misses) > 0:
-            hit_avg = mean([t for _, t in hits])
-            miss_avg = mean([t for _, t in misses])
-            print(f"  Hit/Miss avg ratio: {hit_avg / miss_avg:.2f}x (miss slower)")
-    
-    # Write to file
-    print("\n" + "=" * 60)
-    print(f"Analysis saved to: {output_file}")
+    print_statistics(hits, misses)
+    generate_cdf_plot(hits, misses, output_file)
 
 if __name__ == '__main__':
     main()

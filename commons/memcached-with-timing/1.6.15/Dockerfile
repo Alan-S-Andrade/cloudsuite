@@ -9,24 +9,14 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends libevent-2.1-7 && rm -rf /var/lib/apt/lists/*;
 
-ENV MEMCACHED_VERSION 1.6.15
+# Copy pre-modified memcached source with timing instrumentation for assoc_find()
+COPY src /usr/src/memcached
 
-# this checksum was not provided with the author of memcached, it is checksum of the working downloaded version
-ENV MEMCACHED_SHA1 badcfa0d65f5797cc9c2f957f3fbfedbd8c13411
-
-COPY assoc_find_timing.patch /tmp/assoc_find_timing.patch
-
-RUN buildDeps='curl gcc libc6-dev libevent-dev make perl' \
+RUN buildDeps='autoconf automake gcc libc6-dev libevent-dev m4 make perl' \
 	&& set -x \
 	&& apt-get update && apt-get install -y $buildDeps --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/* \
-	&& curl -SL "http://memcached.org/files/memcached-$MEMCACHED_VERSION.tar.gz" -o memcached.tar.gz \
-	&& echo "$MEMCACHED_SHA1 memcached.tar.gz" | sha1sum -c - \
-	&& mkdir -p /usr/src/memcached \
-	&& tar -xzf memcached.tar.gz -C /usr/src/memcached --strip-components=1 \
-	&& rm memcached.tar.gz \
 	&& cd /usr/src/memcached \
-	&& patch -p1 < /tmp/assoc_find_timing.patch \
 	&& ./configure \
 	&& make -j $(nproc) \
 	&& make install \

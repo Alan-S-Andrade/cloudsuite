@@ -98,7 +98,8 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     if (settings.verbose > 1) {
         uint64_t assoc_find_ns = (uint64_t)(assoc_find_end.tv_sec - assoc_find_start.tv_sec) * 1000000000ULL
             + (uint64_t)(assoc_find_end.tv_nsec - assoc_find_start.tv_nsec);
-        fprintf(stderr, "assoc_find latency: depth=%d time_ns=%llu\n", depth, (unsigned long long)assoc_find_ns);
+        const char *result = (ret != NULL) ? "HIT" : "MISS";
+        fprintf(stderr, "assoc_find %s depth=%d time_ns=%llu\n", result, depth, (unsigned long long)assoc_find_ns);
     }
     return ret;
 }

@@ -88,31 +88,49 @@ def generate_cdf_plot(hits, misses, output_file):
     hit_sorted, hit_cdf = calculate_cdf(hit_times)
     miss_sorted, miss_cdf = calculate_cdf(miss_times)
     
-    # Create figure with larger size
-    fig, ax = plt.subplots(figsize=(14, 8))
+    # Create figure with 2 subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
     
     # Convert to microseconds for readability
-    # Plot with different styles and markers for better visibility
-    ax.plot(hit_sorted / 1000, hit_cdf * 100, linewidth=2.5, label='Cache Hit', 
-            color='green', linestyle='-', marker='o', markersize=2, markevery=100, alpha=0.8)
-    ax.plot(miss_sorted / 1000, miss_cdf * 100, linewidth=2.5, label='Cache Miss', 
-            color='red', linestyle='--', marker='s', markersize=2, markevery=100, alpha=0.8)
+    hit_us = hit_sorted / 1000
+    miss_us = miss_sorted / 1000
     
-    ax.set_xlabel('Latency (µs)', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Cumulative Probability (%)', fontsize=13, fontweight='bold')
-    ax.set_title('assoc_find() Latency CDF - Hits vs Misses', fontsize=15, fontweight='bold')
-    ax.legend(fontsize=12, loc='lower right', framealpha=0.9)
-    ax.grid(True, alpha=0.3, linestyle=':')
+    # Plot 1: Linear scale (zoomed to 0-10µs)
+    ax1.plot(hit_us, hit_cdf * 100, linewidth=2.5, label='Cache Hit', 
+            color='green', linestyle='-', marker='o', markersize=2, markevery=50, alpha=0.8)
+    ax1.plot(miss_us, miss_cdf * 100, linewidth=2.5, label='Cache Miss', 
+            color='red', linestyle='--', marker='s', markersize=2, markevery=50, alpha=0.8)
+    ax1.set_xlabel('Latency (µs)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Cumulative Probability (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Linear Scale (0-10µs)', fontsize=13, fontweight='bold')
+    ax1.set_xlim(0, 10)
+    ax1.legend(fontsize=11, loc='lower right', framealpha=0.9)
+    ax1.grid(True, alpha=0.3, linestyle=':')
     
-    # Add some statistics as text
+    # Plot 2: Logarithmic scale (full range)
+    ax2.semilogx(hit_us, hit_cdf * 100, linewidth=2.5, label='Cache Hit', 
+                color='green', linestyle='-', marker='o', markersize=2, markevery=50, alpha=0.8)
+    ax2.semilogx(miss_us, miss_cdf * 100, linewidth=2.5, label='Cache Miss', 
+                color='red', linestyle='--', marker='s', markersize=2, markevery=50, alpha=0.8)
+    ax2.set_xlabel('Latency (µs, log scale)', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Cumulative Probability (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Logarithmic Scale (Full Range)', fontsize=13, fontweight='bold')
+    ax2.legend(fontsize=11, loc='lower right', framealpha=0.9)
+    ax2.grid(True, alpha=0.3, linestyle=':')
+    
+    # Add main title
+    fig.suptitle('assoc_find() Latency CDF - Hits vs Misses', fontsize=15, fontweight='bold', y=0.98)
+    
+    # Add statistics as text
     hit_p99 = np.percentile(hit_times, 99) / 1000
     miss_p99 = np.percentile(miss_times, 99) / 1000
+    hit_p95 = np.percentile(hit_times, 95) / 1000
+    miss_p95 = np.percentile(miss_times, 95) / 1000
     textstr = f'Hit 99th: {hit_p99:.2f}µs | Miss 99th: {miss_p99:.2f}µs | Ratio: {miss_p99/hit_p99:.2f}x'
-    ax.text(0.98, 0.05, textstr, transform=ax.transAxes, fontsize=10,
-            verticalalignment='bottom', horizontalalignment='right',
+    fig.text(0.98, 0.02, textstr, ha='right', fontsize=10,
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
     
     # Save figure
     plt.savefig(output_file, dpi=150)

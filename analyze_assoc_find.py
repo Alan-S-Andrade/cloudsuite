@@ -88,18 +88,30 @@ def generate_cdf_plot(hits, misses, output_file):
     hit_sorted, hit_cdf = calculate_cdf(hit_times)
     miss_sorted, miss_cdf = calculate_cdf(miss_times)
     
-    # Create figure
-    plt.figure(figsize=(12, 7))
+    # Create figure with larger size
+    fig, ax = plt.subplots(figsize=(14, 8))
     
     # Convert to microseconds for readability
-    plt.plot(hit_sorted / 1000, hit_cdf * 100, linewidth=2, label='Cache Hit', color='green')
-    plt.plot(miss_sorted / 1000, miss_cdf * 100, linewidth=2, label='Cache Miss', color='red')
+    # Plot with different styles and markers for better visibility
+    ax.plot(hit_sorted / 1000, hit_cdf * 100, linewidth=2.5, label='Cache Hit', 
+            color='green', linestyle='-', marker='o', markersize=2, markevery=100, alpha=0.8)
+    ax.plot(miss_sorted / 1000, miss_cdf * 100, linewidth=2.5, label='Cache Miss', 
+            color='red', linestyle='--', marker='s', markersize=2, markevery=100, alpha=0.8)
     
-    plt.xlabel('Latency (µs)', fontsize=12)
-    plt.ylabel('Cumulative Probability (%)', fontsize=12)
-    plt.title('assoc_find() Latency CDF - Hits vs Misses', fontsize=14, fontweight='bold')
-    plt.legend(fontsize=11, loc='lower right')
-    plt.grid(True, alpha=0.3)
+    ax.set_xlabel('Latency (µs)', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Cumulative Probability (%)', fontsize=13, fontweight='bold')
+    ax.set_title('assoc_find() Latency CDF - Hits vs Misses', fontsize=15, fontweight='bold')
+    ax.legend(fontsize=12, loc='lower right', framealpha=0.9)
+    ax.grid(True, alpha=0.3, linestyle=':')
+    
+    # Add some statistics as text
+    hit_p99 = np.percentile(hit_times, 99) / 1000
+    miss_p99 = np.percentile(miss_times, 99) / 1000
+    textstr = f'Hit 99th: {hit_p99:.2f}µs | Miss 99th: {miss_p99:.2f}µs | Ratio: {miss_p99/hit_p99:.2f}x'
+    ax.text(0.98, 0.05, textstr, transform=ax.transAxes, fontsize=10,
+            verticalalignment='bottom', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
     plt.tight_layout()
     
     # Save figure
@@ -111,7 +123,7 @@ def generate_cdf_plot(hits, misses, output_file):
     plt.savefig(pdf_file, dpi=150)
     print(f"CDF plot also saved to: {pdf_file}")
     
-    plt.show()
+    plt.close()
     return True
 
 def print_statistics(hits, misses):

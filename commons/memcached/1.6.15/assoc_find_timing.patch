@@ -8,29 +8,101 @@
  #include <sys/resource.h>
  #include <signal.h>
  #include <fcntl.h>
-@@ -70,6 +71,16 @@
+@@ -27,6 +28,11 @@
+ 
+ static pthread_cond_t maintenance_cond = PTHREAD_COND_INITIALIZER;
+ static pthread_mutex_t maintenance_lock = PTHREAD_MUTEX_INITIALIZER;
++static pthread_mutex_t assoc_find_timing_lock = PTHREAD_MUTEX_INITIALIZER;
++static uint64_t *assoc_find_times = NULL;
++static size_t assoc_find_times_count = 0;
++static size_t assoc_find_times_capacity = 0;
++static bool assoc_find_timing_registered = false;
+ 
+ /* how many powers of 2's worth of buckets we use */
+ unsigned int hashpower = HASHPOWER_DEFAULT;
+@@ -52,7 +58,68 @@
+  */
+ static uint64_t expand_bucket = 0;
+ 
++static int assoc_find_time_cmp(const void *a, const void *b) {
++    const uint64_t lhs = *(const uint64_t *)a;
++    const uint64_t rhs = *(const uint64_t *)b;
++    return (lhs > rhs) - (lhs < rhs);
++}
++
++static uint64_t assoc_find_percentile(const uint64_t *times, const size_t count,
++                                      const size_t percentile) {
++    size_t index = ((percentile * count) + 99) / 100;
++    index = index == 0 ? 0 : index - 1;
++    return times[index];
++}
++
++static void assoc_find_print_timing(void) {
++    pthread_mutex_lock(&assoc_find_timing_lock);
++    if (assoc_find_times_count == 0) {
++        pthread_mutex_unlock(&assoc_find_timing_lock);
++        return;
++    }
++
++    qsort(assoc_find_times, assoc_find_times_count, sizeof(uint64_t),
++          assoc_find_time_cmp);
++    fprintf(stderr,
++            "assoc_find Time: count=%zu P25 %llu ns  P50 %llu ns  P99 %llu ns\n",
++            assoc_find_times_count,
++            (unsigned long long)assoc_find_percentile(assoc_find_times,
++                                                      assoc_find_times_count, 25),
++            (unsigned long long)assoc_find_percentile(assoc_find_times,
++                                                      assoc_find_times_count, 50),
++            (unsigned long long)assoc_find_percentile(assoc_find_times,
++                                                      assoc_find_times_count, 99));
++    free(assoc_find_times);
++    assoc_find_times = NULL;
++    assoc_find_times_count = 0;
++    assoc_find_times_capacity = 0;
++    pthread_mutex_unlock(&assoc_find_timing_lock);
++}
++
++static void assoc_find_record_time(const uint64_t elapsed_ns) {
++    pthread_mutex_lock(&assoc_find_timing_lock);
++    if (assoc_find_times_count == assoc_find_times_capacity) {
++        size_t new_capacity = assoc_find_times_capacity == 0
++                                  ? 1024
++                                  : assoc_find_times_capacity * 2;
++        uint64_t *new_times = realloc(assoc_find_times,
++                                      new_capacity * sizeof(uint64_t));
++        if (new_times == NULL) {
++            pthread_mutex_unlock(&assoc_find_timing_lock);
++            return;
++        }
++        assoc_find_times = new_times;
++        assoc_find_times_capacity = new_capacity;
++    }
++    assoc_find_times[assoc_find_times_count++] = elapsed_ns;
++    pthread_mutex_unlock(&assoc_find_timing_lock);
++}
++
+ void assoc_init(const int hashtable_init) {
++    if (!assoc_find_timing_registered) {
++        atexit(assoc_find_print_timing);
++        assoc_find_timing_registered = true;
++    }
+     if (hashtable_init) {
+         hashpower = hashtable_init;
+     }
+@@ -68,9 +135,12 @@
+ }
+ 
  item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
 +    struct timespec assoc_find_start, assoc_find_end;
      item *it;
      uint64_t oldbucket;
-+
-+    clock_gettime(CLOCK_MONOTONIC, &assoc_find_start);
  
++    clock_gettime(CLOCK_MONOTONIC, &assoc_find_start);
++
      if (expanding &&
          (oldbucket = (hv & hashmask(hashpower - 1))) >= expand_bucket)
      {
-         it = old_hashtable[oldbucket];
-     } else {
-         it = primary_hashtable[hv & hashmask(hashpower)];
-     }
- 
-     item *ret = NULL;
-     int depth = 0;
-@@ -89,6 +100,11 @@
-         if ((nkey == it->nkey) && (memcmp(key, ITEM_key(it), nkey) == 0)) {
-             ret = it;
-             break;
-         }
+@@ -89,7 +159,13 @@
          it = it->h_next;
          ++depth;
      }
@@ -39,8 +111,7 @@
 +    if (settings.verbose > 1) {
 +        uint64_t assoc_find_ns = (uint64_t)(assoc_find_end.tv_sec - assoc_find_start.tv_sec) * 1000000000ULL
 +            + (uint64_t)(assoc_find_end.tv_nsec - assoc_find_start.tv_nsec);
-+        fprintf(stderr, "assoc_find latency: depth=%d time_ns=%llu\n", depth, (unsigned long long)assoc_find_ns);
++        assoc_find_record_time(assoc_find_ns);
 +    }
      return ret;
  }
- 
